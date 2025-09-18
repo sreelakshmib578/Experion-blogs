@@ -1,0 +1,651 @@
+{{ 'blog-filter-block.css' | asset_url | stylesheet_tag }}
+
+{% style %}
+  :root {
+    --heading-color: {{ block.settings.heading_color }};
+    --text-color: {{ block.settings.text_color }};
+    --btn-bg: {{ block.settings.button_background }};
+    --btn-text: {{ block.settings.button_text_color }};
+    --filter-bg: {{ block.settings.filter_panel_bg }};
+    --filter-label: {{ block.settings.filter_label_color }};
+    --font-family: {{ block.settings.article_font | escape }};
+    --filter-panel-button-color: {{ block.settings.filter_panel_button_color }};
+  }
+
+  .section-{{ block.id }}-padding {
+    padding-top: {{ block.settings.padding_top | times: 0.75 | round: 0 }}px;
+    padding-bottom: {{ block.settings.padding_bottom | times: 0.75 | round: 0 }}px;
+  }
+
+  @media screen and (min-width: 750px) {
+    .section-{{ block.id }}-padding {
+      padding-top: {{ block.settings.padding_top }}px;
+      padding-bottom: {{ block.settings.padding_bottom }}px;
+    }
+  }
+
+  .blog-articles,
+  .blog-articles__article,
+  .blog-title,
+  .tag-btn,
+  .category-filter,
+  .filter-group h4,
+  .filter-group ul,
+  .filter-group li,
+  .filter-group label,
+  .filter-group input,
+  #blog-search,
+  .sort-by,
+  #toggle-filters,
+  #clear-filters,
+  .blog-articles * {
+    font-family: var(--font-family);
+    color: var(--text-color);
+  }
+
+  .blog-title,
+  .h1,
+  .h2,
+  .h3,
+  .h4 {
+    color: var(--heading-color);
+  }
+
+  .tag-btn,
+  .blog-filter-btn,
+  .done-btn,
+  .blog-articles .read-on-link,
+  .pagination-controls button {
+    background-color: var(--btn-bg);
+    color: var(--btn-text);
+  }
+
+  .blog-articles .read-on-link {
+    color: var(--btn-text);
+  }
+  .blog-filter-btn {
+    background-color: var(--filter-panel-button-color);
+  }
+  #filter-panel {
+    background-color: var(--filter-bg);
+  }
+
+  .filter-group h4,
+  .filter-group label {
+    color: var(--filter-label);
+  }
+  {% if block.settings.filter_by_date %}
+    .filter-group-date {
+      display: block;
+    }
+  {% else %}
+    .filter-group-date {
+      display: none;
+    }
+  {% endif %}
+  {% if block.settings.show_sorting %}
+    .sort-by-panel {
+      display: block;
+    }
+  {% else %}
+    .sort-by-panel {
+      display: none;
+    }
+  {% endif %}
+{% endstyle %}
+
+{%- if block.settings.custom_css != blank -%}
+  {% style %}
+    {{ block.settings.custom_css }}
+  {% endstyle %}
+{%- endif -%}
+
+{% assign featured_tags = blog.metafields.blog_filtering.featured_tags.value %}
+<div class="main-blog page-width section-{{ block.id }}-padding" data-featured-tags='{{ featured_tags | json }}'>
+  <div class="blog-header-wrapper">
+    <h1 class="blog-title">blogs</h1>
+
+    <div class="blog-tags">
+      <button type="button" class="tag-btn active" data-tag="all">All</button>
+      {% assign tags = blog.all_tags %}
+      {% for tag in tags %}
+        <button type="button" class="tag-btn" data-tag="{{ tag | downcase }}">{{ tag }}</button>
+      {% endfor %}
+    </div>
+
+    <div class="blog-controls">
+      <input type="text" id="blog-search" placeholder="Search" class="blog-search-input">
+      <button id="toggle-filters" class="blog-filter-btn">Filter by</button>
+      <div class="sort-by-panel">
+        <label for="sort-by-label">Sort by:</label>
+        <select id="sort-by">
+          <option value="default">Default (Featured first)</option>
+          <option value="newest">Newest first</option>
+          <option value="oldest">Oldest first</option>
+        </select>
+      </div>
+    </div>
+    <div class="selected-filters" id="selected-filters"></div>
+    <div id="filter-panel">
+      <hr>
+      {% if block.settings.filter_by_category %}
+        <div class="filter-group">
+          <h4>Category</h4>
+          <ul>
+            {% for tag in tags %}
+              <li>
+                <label><input type="checkbox" class="category-filter" value="{{ tag | downcase }}"> {{ tag }}</label>
+              </li>
+            {% endfor %}
+          </ul>
+        </div>
+      {% endif %}
+
+      <div class="filter-group-date">
+        <h4>From date</h4>
+        <input type="date" id="from-date">
+        <h4>To date</h4>
+        <input type="date" id="to-date">
+      </div>
+      {% if block.settings.filter_by_author %}
+        <div class="filter-group">
+          <h4>Author</h4>
+          <ul>
+            {% assign authors = '' %}
+            {% for article in blog.articles %}
+              {% assign authors = authors | append: article.author | append: ',' %}
+            {% endfor %}
+            {% assign author_list = authors | split: ',' | uniq | sort %}
+            {% for author in author_list %}
+              {% unless author == '' %}
+                <li>
+                  <label>
+                    <input type="checkbox" class="author-filter" value="{{ author | downcase }}"> {{ author }}
+                  </label>
+                </li>
+              {% endunless %}
+            {% endfor %}
+          </ul>
+        </div>
+      {% endif %}
+
+      <button id="apply-filters" class="done-btn">Done</button>
+      <a href="#" id="clear-filters">Clear All</a>
+    </div>
+  </div>
+
+  <div class="blog-articles grid-{{ block.settings.articles_per_row }}" id="visible-articles"></div>
+  <div id="load-more-button" class="load-more-button" style="display: none;">
+    <div class="pagination-controls">
+      <button id="next-page">Load more</button>
+    </div>
+
+    <div id="all-articles-store" style="display: none">
+      {% assign now = 'now' | date: '%Y-%m-%d' %}
+      {% for article in blog.articles %}
+        {% assign to_date_raw = article.metafields.custom.to_date %}
+        {% assign to_date = to_date_raw | date: '%Y-%m-%d' %}
+        {% if to_date != blank and to_date >= now %}
+          <div
+            class="blog-articles__article"
+            data-tags="{{ article.tags | join: ',' | downcase }}"
+            data-published="{{ article.published_at | date: '%Y-%m-%d' }}"
+            data-to="{{ to_date }}"
+            data-author="{{ article.author | downcase }}"
+            data-content="{{ article.content | strip_html | strip_newlines | escape }}"
+          >
+            {% render 'article-card',
+              article: article,
+              media_height: block.settings.image_height,
+              media_aspect_ratio: article.image.aspect_ratio,
+              show_image: block.settings.show_image,
+              show_date: block.settings.show_date,
+              show_author: block.settings.show_author,
+              show_excerpt: true,
+              featured_label_text: block.settings.featured_label_text,
+              featured_label_bg: block.settings.featured_label_bg,
+              featured_label_position: block.settings.featured_label_position
+            %}
+          </div>
+        {% endif %}
+      {% endfor %}
+    </div>
+  </div>
+  <div id="pagination-numbers" class="pagination-controls" style="display:none;"></div>
+</div>
+
+<script>
+  const pageSize = {{ block.settings.page_size | default: 6 }};
+  const paginationType = "{{ block.settings.pagination_type }}";
+  let allArticles = [];
+  let filteredArticles = [];
+  let currentPage = 1;
+  let totalPages = 1;
+  const container = document.querySelector('.main-blog');
+  let featuredTags = [];
+  let currentSortOrder = 'default';
+
+  try {
+    const rawTags = container.dataset.featuredTags || '[]';
+    featuredTags = JSON.parse(rawTags).map(tag => tag.trim().toLowerCase());
+  } catch (e) {
+    console.warn('Invalid featured tags', e);
+  }
+  function parseDate(dateStr) {
+    if (!dateStr) return null;
+    const [y, m, d] = dateStr.split('-').map(Number);
+    return new Date(y, m - 1, d);
+  }
+  function matchesFilter(articleEl) {
+    const selectedTag = document.querySelector('.tag-btn.active')?.dataset.tag;
+    const keyword = document.getElementById('blog-search').value.toLowerCase();
+    const selectedCats = Array.from(document.querySelectorAll('.category-filter:checked')).map(el => el.value);
+    const selectedAuthors = Array.from(document.querySelectorAll('.author-filter:checked')).map(el => el.value);
+    const fromDateEl = document.getElementById('from-date');
+    const toDateEl = document.getElementById('to-date');
+    const fromDate = fromDateEl ? parseDate(fromDateEl.value) : null;
+    const toDate = toDateEl ? parseDate(toDateEl.value) : null;
+    const tags = (articleEl.dataset.tags || '').split(',').map(tag => tag.trim().toLowerCase());
+    const text = (articleEl.innerText + ' ' + (articleEl.dataset.content || '')).toLowerCase();
+    const pub = parseDate(articleEl.dataset.published);
+    const to = parseDate(articleEl.dataset.to);
+    const author = (articleEl.dataset.author || '').toLowerCase();
+    if (selectedTag && selectedTag !== 'all' && !tags.includes(selectedTag)) return false;
+    if (keyword && !text.includes(keyword)) return false;
+    if (selectedCats.length && !selectedCats.some(c => tags.includes(c))) return false;
+    if (selectedAuthors.length && !selectedAuthors.includes(author)) return false;
+    if (fromDate && (!pub || pub < fromDate)) return false;
+    if (toDate && (!to || to > toDate)) return false;
+    return true;
+  }
+  function sortArticles(articles) {
+    return articles.sort((a, b) => {
+      const dateA = parseDate(a.dataset.published);
+      const dateB = parseDate(b.dataset.published);
+      if (currentSortOrder === 'newest') return dateB - dateA;
+      if (currentSortOrder === 'oldest') return dateA - dateB;
+      return 0;
+    });
+  }
+  function applyFilters() {
+    filteredArticles = allArticles.filter(matchesFilter);
+    if (currentSortOrder === 'default') {
+      const featured = [];
+      const nonFeatured = [];
+      filteredArticles.forEach(article => {
+        const tags = (article.dataset.tags || '').split(',').map(tag => tag.trim().toLowerCase());
+        const isFeatured = tags.some(tag => featuredTags.includes(tag));
+        if (isFeatured) {
+          featured.push(article);
+        } else {
+          nonFeatured.push(article);
+        }
+      });
+      const sortedFeatured = sortArticles(featured);
+      const sortedNonFeatured = sortArticles(nonFeatured);
+      filteredArticles = [...sortedFeatured, ...sortedNonFeatured];
+    } else {
+      filteredArticles = sortArticles(filteredArticles);
+    }
+    currentPage = 1;
+    totalPages = Math.ceil(filteredArticles.length / pageSize);
+    renderPage();
+  }
+  function renderPage() {
+    const container = document.querySelector('.blog-articles');
+    container.innerHTML = '';
+    let start, end;
+    if (paginationType === 'infinite') {
+      start = 0;
+      end = currentPage * pageSize;
+    } else {
+      start = (currentPage - 1) * pageSize;
+      end = currentPage * pageSize;
+    }
+    const visibleArticles = filteredArticles.slice(start, end);
+    visibleArticles.forEach(el => {
+      container.appendChild(el.cloneNode(true));
+    });
+    const loadMoreBtn = document.getElementById('load-more-button');
+    const numberedPagination = document.getElementById('pagination-numbers');
+    if (paginationType === 'infinite') {
+      if (loadMoreBtn) loadMoreBtn.style.display = filteredArticles.length > end ? 'block' : 'none';
+      if (numberedPagination) numberedPagination.style.display = 'none';
+    } else {
+      if (loadMoreBtn) loadMoreBtn.style.display = 'none';
+      if (numberedPagination) {
+        numberedPagination.style.display = 'block';
+        renderNumberedPagination();
+      }
+    }
+  }
+  function renderNumberedPagination() {
+    const paginationEl = document.getElementById('pagination-numbers');
+    paginationEl.innerHTML = '';
+    if (totalPages <= 1) return;
+    const prevBtn = document.createElement('button');
+    prevBtn.textContent = 'Prev';
+    prevBtn.disabled = currentPage === 1;
+    prevBtn.addEventListener('click', () => {
+      if (currentPage > 1) {
+        currentPage--;
+        renderPage();
+      }
+    });
+    paginationEl.appendChild(prevBtn);
+    for (let i = 1; i <= totalPages; i++) {
+      const pageBtn = document.createElement('button');
+      pageBtn.textContent = i;
+      if (i === currentPage) pageBtn.classList.add('active');
+      pageBtn.addEventListener('click', () => {
+        currentPage = i;
+        renderPage();
+      });
+      paginationEl.appendChild(pageBtn);
+    }
+    const nextBtn = document.createElement('button');
+    nextBtn.textContent = 'Next';
+    nextBtn.disabled = currentPage === totalPages;
+    nextBtn.addEventListener('click', () => {
+      if (currentPage < totalPages) {
+        currentPage++;
+        renderPage();
+      }
+    });
+    paginationEl.appendChild(nextBtn);
+  }
+  document.addEventListener('DOMContentLoaded', function () {
+    allArticles = Array.from(document.querySelectorAll('#all-articles-store .blog-articles__article'));
+    const toggleBtn = document.getElementById('toggle-filters');
+    const filterPanel = document.getElementById('filter-panel');
+    const clearBtn = document.getElementById('clear-filters');
+    const applyBtn = document.getElementById('apply-filters');
+    const selectedFiltersEl = document.getElementById('selected-filters');
+    const searchInput = document.getElementById('blog-search');
+    const tagButtons = document.querySelectorAll('.tag-btn');
+    const sortSelect = document.getElementById('sort-by');
+    toggleBtn?.addEventListener('click', () => {
+      filterPanel.style.display = filterPanel.style.display === 'block' ? 'none' : 'block';
+    });
+    applyBtn?.addEventListener('click', () => {
+      filterPanel.style.display = 'none';
+      const selectedTags = Array.from(document.querySelectorAll('.category-filter:checked')).map(cb => cb.value);
+      const selectedAuthors = Array.from(document.querySelectorAll('.author-filter:checked')).map(cb => cb.value);
+      selectedFiltersEl.innerHTML = '';
+      selectedTags.forEach(tag => {
+        selectedFiltersEl.innerHTML += `<span class="filter-tag">${tag}<button class="remove-tag" data-tag="${tag}">&times;</button></span>`;
+      });
+      selectedAuthors.forEach(author => {
+        selectedFiltersEl.innerHTML += `<span class="filter-tag">${author}<button class="remove-author" data-author="${author}">&times;</button></span>`;
+      });
+      applyFilters();
+    });
+    selectedFiltersEl?.addEventListener('click', (e) => {
+      if (e.target.classList.contains('remove-tag')) {
+        const tag = e.target.dataset.tag;
+        const checkbox = document.querySelector(`.category-filter[value="${tag}"]`);
+        if (checkbox) checkbox.checked = false;
+        e.target.parentElement.remove();
+        applyFilters();
+      }
+      if (e.target.classList.contains('remove-author')) {
+        const author = e.target.dataset.author;
+        const checkbox = document.querySelector(`.author-filter[value="${author}"]`);
+        if (checkbox) checkbox.checked = false;
+        e.target.parentElement.remove();
+        applyFilters();
+      }
+    });
+    clearBtn?.addEventListener('click', e => {
+      e.preventDefault();
+      document.querySelectorAll('.category-filter, .author-filter').forEach(cb => cb.checked = false);
+      if (document.getElementById('from-date')) document.getElementById('from-date').value = '';
+      if (document.getElementById('to-date')) document.getElementById('to-date').value = '';
+      selectedFiltersEl.innerHTML = '';
+      tagButtons.forEach(btn => btn.classList.remove('active'));
+      tagButtons[0]?.classList.add('active');
+      searchInput.value = '';
+      applyFilters();
+    });
+    tagButtons.forEach(btn =>
+      btn.addEventListener('click', function () {
+        tagButtons.forEach(b => b.classList.remove('active'));
+        this.classList.add('active');
+        searchInput.value = '';
+        applyFilters();
+      })
+    );
+    searchInput.addEventListener('input', applyFilters);
+    document.getElementById('load-more-button')?.addEventListener('click', () => {
+      currentPage++;
+      renderPage();
+    });
+    document.querySelectorAll('.author-filter').forEach(cb =>
+      cb.addEventListener('change', applyFilters)
+    );
+    sortSelect?.addEventListener('change', function () {
+      currentSortOrder = this.value;
+      applyFilters();
+    });
+    applyFilters();
+  });
+</script>
+{% schema %}
+{
+  "name": "Blog Filter Block",
+  "target": "section",
+  "settings": [
+    {
+      "type": "header",
+      "content": "Display Options"
+    },
+    {
+      "type": "checkbox",
+      "id": "show_image",
+      "default": true,
+      "label": "Show article image"
+    },
+    {
+      "type": "checkbox",
+      "id": "show_date",
+      "default": true,
+      "label": "Show article date"
+    },
+    {
+      "type": "checkbox",
+      "id": "show_author",
+      "default": false,
+      "label": "Show article author"
+    },
+    {
+      "type": "header",
+      "content": "Filter Options"
+    },
+    {
+      "type": "checkbox",
+      "id": "filter_by_category",
+      "default": true,
+      "label": "Filter article by category"
+    },
+    {
+      "type": "checkbox",
+      "id": "filter_by_date",
+      "default": true,
+      "label": "Filter article by date"
+    },
+    {
+      "type": "checkbox",
+      "id": "filter_by_author",
+      "default": false,
+      "label": "Filter article by author"
+    },
+    {
+      "type": "header",
+      "content": "Image Settings"
+    },
+    {
+      "type": "select",
+      "id": "image_height",
+      "options": [
+        { "value": "adapt", "label": "Adapt to image" },
+        { "value": "small", "label": "Small" },
+        { "value": "medium", "label": "Medium" },
+        { "value": "large", "label": "Large" }
+      ],
+      "default": "medium",
+      "label": "Image height"
+    },
+    {
+      "type": "header",
+      "content": "Layout & Spacing"
+    },
+    {
+      "type": "range",
+      "id": "padding_top",
+      "min": 0,
+      "max": 100,
+      "step": 4,
+      "unit": "px",
+      "label": "Top padding",
+      "default": 36
+    },
+    {
+      "type": "range",
+      "id": "padding_bottom",
+      "min": 0,
+      "max": 100,
+      "step": 4,
+      "unit": "px",
+      "label": "Bottom padding",
+      "default": 36
+    },
+    {
+      "type": "select",
+      "id": "articles_per_row",
+      "options": [
+        { "value": "2", "label": "2 per row" },
+        { "value": "3", "label": "3 per row" },
+        { "value": "4", "label": "4 per row" }
+      ],
+      "label": "Articles per row",
+      "default": "3"
+    },
+    {
+      "type": "range",
+      "id": "page_size",
+      "min": 1,
+      "max": 8,
+      "step": 1,
+      "label": "Articles per page",
+      "default": 6
+    },
+    {
+      "type": "header",
+      "content": "Typography & Colors"
+    },
+    {
+      "type": "select",
+      "id": "article_font",
+      "label": "Font for blog articles",
+      "default": "system-ui",
+      "options": [
+        { "value": "system-ui", "label": "System UI (default)" },
+        { "value": "georgia", "label": "Georgia" },
+        { "value": "avenir", "label": "Avenir" },
+        { "value": "Roboto", "label": "Roboto" }
+      ]
+    },
+    {
+      "type": "color",
+      "id": "heading_color",
+      "label": "Heading Color",
+      "default": "#2f4033"
+    },
+    {
+      "type": "color",
+      "id": "text_color",
+      "label": "Text Color",
+      "default": "#2f4033"
+    },
+    {
+      "type": "color",
+      "id": "button_background",
+      "label": "Button Background Color",
+      "default": "#2f4033"
+    },
+    {
+      "type": "color",
+      "id": "button_text_color",
+      "label": "Button Text Color",
+      "default": "#ffffff"
+    },
+    {
+      "type": "color",
+      "id": "filter_panel_button_color",
+      "label": "Filter Button Background Color",
+      "default": "#ffffff"
+    },
+    {
+      "type": "color",
+      "id": "filter_panel_bg",
+      "label": "Filter Panel Background",
+      "default": "#f9f9f9"
+    },
+    {
+      "type": "color",
+      "id": "filter_label_color",
+      "label": "Filter Label Color",
+      "default": "#2f4033"
+    },
+    {
+      "type": "header",
+      "content": "Advanced"
+    },
+    {
+      "type": "checkbox",
+      "id": "show_sorting",
+      "default": false,
+      "label": "Sort articles by date"
+    },
+      {
+    "type": "select",
+    "id": "pagination_type",
+    "label": "Article loading type",
+    "default": "infinite",
+    "options": [
+      { "value": "infinite", "label": "Load More button" },
+      { "value": "pagination", "label": "Default pagination" }
+    ]
+  },
+    {
+      "type": "textarea",
+      "id": "custom_css",
+      "label": "Custom CSS",
+      "info": "Add custom style to this section",
+      "placeholder": "h2 {\n  font-size: 32px;\n}"
+    },
+    {
+      "type": "text",
+      "id": "featured_label_text",
+      "label": "Featured Label Text",
+      "default": "Featured"
+    },
+    {
+      "type": "color",
+      "id": "featured_label_bg",
+      "label": "Featured Label Background Color",
+      "default": "#000000"
+    },
+    {
+      "type": "select",
+      "id": "featured_label_position",
+      "label": "Label Position",
+      "options": [
+        { "value": "top-left", "label": "Top Left" },
+        { "value": "top-right", "label": "Top Right" }
+      ],
+      "default": "top-left"
+    }
+  ]
+}
+{% endschema %}
