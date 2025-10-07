@@ -103,19 +103,27 @@
 {% assign featured_tags = blog.metafields.blog_filtering.featured_tags.value %}
 <div class="main-blog page-width section-{{ block.id }}-padding" data-featured-tags='{{ featured_tags | json }}'>
   <div class="blog-header-wrapper">
-    <h1 class="blog-title">blogs</h1>
-
-    <div class="blog-tags">
-      <button type="button" class="tag-btn active" data-tag="all">All</button>
-      {% assign tags = blog.all_tags %}
-      {% for tag in tags %}
-        <button type="button" class="tag-btn" data-tag="{{ tag | downcase }}">{{ tag }}</button>
-      {% endfor %}
-    </div>
+{% assign blog_settings = shop.metafields.blog_settings %}
+{% assign plan_name = blog_settings.plan_name.value | default: 'Free' %}
+    <h1 class="blog-title" data-blog='{{plan_name}}'>blogs</h1>
+   {% if plan_name == 'Monthly subscription' or plan_name == 'Annual subscription' %}
+      <div class="blog-tags">
+        <button type="button" class="tag-btn active" data-tag="all">All</button>
+        
+          {% assign tags = blog.all_tags %}
+          {% for tag in tags %}
+            <button type="button" class="tag-btn" data-tag="{{ tag | downcase }}">{{ tag }}</button>
+          {% endfor %}
+        
+      </div>
+    {% endif %}
 
     <div class="blog-controls">
-      <input type="text" id="blog-search" placeholder="Search" class="blog-search-input">
+        <input type="text" id="blog-search" placeholder="Search" class="blog-search-input">
+      {% if plan_name == 'Monthly subscription' or plan_name == 'Annual subscription' %}
+      
       <button id="toggle-filters" class="blog-filter-btn">Filter by</button>
+      {% endif %}
       <div class="sort-by-panel">
         <label for="sort-by-label">Sort by:</label>
         <select id="sort-by">
@@ -238,7 +246,8 @@
   }
   function matchesFilter(articleEl) {
     const selectedTag = document.querySelector('.tag-btn.active')?.dataset.tag;
-    const keyword = document.getElementById('blog-search').value.toLowerCase();
+    const keyword = document.getElementById('blog-search')?.value.toLowerCase() ?? '';
+    console.log('Keyword:', keyword);
     const selectedCats = Array.from(document.querySelectorAll('.category-filter:checked')).map(el => el.value);
     const selectedAuthors = Array.from(document.querySelectorAll('.author-filter:checked')).map(el => el.value);
     const fromDateEl = document.getElementById('from-date');
@@ -415,7 +424,9 @@
         applyFilters();
       })
     );
-    searchInput.addEventListener('input', applyFilters);
+    if (searchInput) {
+      searchInput.addEventListener('input', applyFilters);
+    }
     document.getElementById('load-more-button')?.addEventListener('click', () => {
       currentPage++;
       renderPage();
