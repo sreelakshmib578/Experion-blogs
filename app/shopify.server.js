@@ -44,9 +44,40 @@ const shopify = shopifyApp({
     },
   },
   hooks: {
-    afterAuth: async ({ session }) => {
-      shopify.registerWebhooks({ session });
-    },
+    afterAuth: async ({ admin, session }) => {
+       shopify.registerWebhooks({ session });
+      try {
+        const response = await admin.graphql(ACTIVE_SUBSCRIPTIONS_QUERY);
+        const result = await response.json();
+ 
+        const shopId = result?.data?.shop?.id;
+        const activeSubs = result?.data?.currentAppInstallation?.activeSubscriptions || [];
+ 
+        let planName = "Free";
+        if (Array.isArray(activeSubs) && activeSubs.length > 0) {
+          planName = activeSubs[0].name || "Free";
+        }
+ 
+        const metafieldResponse = await admin.graphql(METAFIELDS_SET_MUTATION, {
+          variables: {
+            metafields: [
+              {
+                namespace: "blog_settings",
+                key: "plan_name",
+                type: "single_line_text_field",
+                value: planName,
+                ownerId: shopId,
+              }
+            ]
+          }
+        });
+        const metafieldResult = await metafieldResponse.json();
+        console.log("Metafield set result:", metafieldResult.data.metafieldsSet.metafields);
+ 
+      } catch (err) {
+        console.error("afterAuth error:", err);
+      }
+    }
   },
   future: {
     v3_webhookAdminContext: true,
